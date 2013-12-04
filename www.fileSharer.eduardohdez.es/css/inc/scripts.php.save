@@ -1,0 +1,701 @@
+<?php session_start(); ?>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.1/jquery.js"></script>
+    <script src="js/bootstrap.js"></script>
+    <script type="text/javascript" src="js/jquery.jplayer.min.js"></script>
+    <script>
+
+function videoP(){
+  var docHeight = $(document).height();
+  var docWidth = $(document).width();
+
+  var videoOverlay = {
+    container: $('#overlay'),
+    container2: $('#video'),
+
+    config: {
+      effect: 'slideToggle',
+      speed: 500
+    },
+
+    init: function(config) {
+      $.extend(this.config, config);
+
+      $('a.play').on('click', this.show);
+    },
+
+    show: function() {
+      var className = $(this).data('class');
+      var classDate = $(this).data('classdate');
+      var format = $(this).data('format');
+      var part = $(this).data('part');
+      var widthVid = 0;
+
+      if(format == "ipad") widthVid = 640;
+      if(format == "iphone") widthVid = 480;
+      if(format == "mp3") widthVid = 420;
+    
+      var cf = videoOverlay,
+        container = cf.container,
+        container2 = cf.container2,
+        config = cf.config;
+
+        $("#overlay")
+              .height(docHeight)
+              .css({
+                 'opacity' : 0.4,
+                 'position': 'absolute',
+                 'top': 0,
+                 'left': 0,
+                 'background-color': 'black',
+                 'width': '100%',
+                 'z-index': 5000
+              });
+
+        $("#video")
+              .height(docHeight/2)
+              .css({
+                 'position': 'absolute',
+                 'top': '50px',
+                 'left': (docWidth-widthVid)/2,
+                 'width': '50%',
+                 'z-index': 10000
+              });
+          
+      
+      if(container.is(':hidden')) {
+        videoOverlay.close.call(videoOverlay.container);
+        videoOverlay.close.call(videoOverlay.container2);
+        container[config.effect](config.speed);
+        container2[config.effect](config.speed);
+      }
+      $("body").attr('oncontextmenu','return false;');
+      $("#video").load("sec/player.php", {class: className, classdate: classDate, format: format, part: part}, function(){});
+
+    }, 
+
+    close: function() {
+      var $this = $(this);
+
+      if( $this.find('span.close').length) return;
+
+      $('<span class=close>X</span>')
+        .prependTo('#video')
+        .on('click', function() {
+          console.log($this);
+          videoOverlay.container[videoOverlay.config.effect](videoOverlay.config.speed);
+          videoOverlay.container2[videoOverlay.config.effect](videoOverlay.config.speed);
+        })
+    }
+  }
+
+  videoOverlay.init({
+    effect: 'fadeToggle',
+    speed: 1000
+  });
+}
+</script>
+
+<?php if(isset($_SESSION["admin"])) { ?>
+<script type="text/javascript" src="https://www.google.com/jsapi"></script>
+<script language="javascript" type="text/javascript" src="My97DatePicker/WdatePicker.js"></script>
+<script type="text/javascript" src="<?=$SWFRoot?>swfupload.js"></script>
+<script type="text/javascript" src="<?=$SWFRoot?>js/fileprogress.js"></script>
+<script type="text/javascript" src="<?=$SWFRoot?>js/jquery.swfupload.js"></script>
+<script type="text/javascript">
+var trackFiles = [];
+var trackFilesCount = 0;
+var trackSentURL = false;
+var forceDone = false;
+var forceFile = null;
+var master = null;
+var MacMinSizeUpload = 150000; // 150k, this is not cool :(
+var MacDelay = 10000; // 10 secs.
+var isMacUser = <?php echo ($isMacUser ? 'true' : 'false'); ?>;
+var successURL = '<?php echo ($SUCCESS_REDIRECT); ?>';
+var randNum = Math.floor((Math.random()*1000000000)+1);
+
+function removeSpaces(string) {
+ return string.split(' ').join('');
+}
+
+$(function(){
+        $('#swfupload-control').swfupload({
+                upload_url: "http://<?=$S3_BUCKET?>.s3.amazonaws.com/",
+                post_params: {"AWSAccessKeyId":"<?=AWS_ACCESS_KEY_ID?>", "key":"LV" + randNum + "_" + "${filename}", "acl":"public-read", "policy":"<?=$policyDoc64?>", "signature":"<?=$sigPolicyDoc?>","success_action_status":"201", "content-type":"image/"},
+                http_success : [201],
+                assume_success_timeout : <?php echo ($isMacUser ? 5 : 0); ?>,
+
+                // File Upload Settings
+                file_post_name: 'file',
+                file_size_limit : "40000000000",    // 40 GB or MB
+                file_types : "*.*",                     // or you could use something like: "*.doc;*.wpd;*.pdf",
+                file_types_description : "All Files",
+                file_upload_limit : "0",
+                file_queue_limit : "1",
+
+                button_image_url : "XPButtonUploadText_61x22.png",
+                button_placeholder_id : 'mybutton',
+                button_placeholder : $('#mybutton'),
+                button_width: 61,
+        button_height: 22,
+
+                button_window_mode: SWFUpload.WINDOW_MODE.TRANSPARENT,
+                button_cursor: SWFUpload.CURSOR.HAND,
+                moving_average_history_size: 10,
+
+                // Flash Settings
+                flash_url : "<?=$SWFRoot?>swfupload.swf",
+                custom_settings : {
+                  progressTarget : "fsUploadProgress",
+                 /* cancelButtonId : "btnCancel"*/
+                  upload_successful : false
+                },
+                // Debug Settings
+                debug: false
+        })
+        .bind('fileDialogStart', function(event, file){
+                var swfu = $.swfupload.getInstance('#swfupload-control');
+                var txtFileName = document.getElementById("txtFileName");
+                txtFileName.value = "";
+                swfu.cancelUpload();
+
+		$('a').click(function(event) {
+         	    if(!confirm('This action will cancel the video upload. Do you want to continue?')) {
+		       event.preventDefault();
+		    }
+		});
+        })
+
+        .bind('uploadError', function(event, file, errorCode, message){
+                var swfu = $.swfupload.getInstance('#swfupload-control');
+                try {
+
+                        if (errorCode === SWFUpload.UPLOAD_ERROR.FILE_CANCELLED) {
+                                // Don't show cancelled error boxes
+                                return;
+                        }
+                        var txtFileName = document.getElementById("txtFileName");
+                        txtFileName.value = "";
+                        validateForm();
+
+                        file.id = "singlefile";
+                        var progress = new FileProgress(file, swfu.customSettings.progressTarget);
+                        progress.setError();
+                        progress.toggleCancel(false);
+
+                        switch (errorCode) {
+                        case SWFUpload.UPLOAD_ERROR.HTTP_ERROR:
+                                progress.setStatus("Upload Error: " + message);
+                                swfu.debug("Error Code: HTTP Error, File name: " + file.name + ", Message: " + message);
+                                break;
+                        case SWFUpload.UPLOAD_ERROR.UPLOAD_FAILED:
+                                progress.setStatus("Upload Failed.");
+                                swfu.debug("Error Code: Upload Failed, File name: " + file.name + ", File size: " + file.size + ", Message: " + message);
+                                break;
+                        case SWFUpload.UPLOAD_ERROR.IO_ERROR:
+                                progress.setStatus("Server (IO) Error");
+                                swfu.debug("Error Code: IO Error, File name: " + file.name + ", Message: " + message);
+                                break;
+                        case SWFUpload.UPLOAD_ERROR.SECURITY_ERROR:
+                                progress.setStatus("Security Error");
+                                swfu.debug("Error Code: Security Error, File name: " + file.name + ", Message: " + message);
+                                break;
+                        case SWFUpload.UPLOAD_ERROR.UPLOAD_LIMIT_EXCEEDED:
+                                progress.setStatus("Upload limit exceeded.");
+                                swfu.debug("Error Code: Upload Limit Exceeded, File name: " + file.name + ", File size: " + file.size + ", Message: " + message);
+                                break;
+                        case SWFUpload.UPLOAD_ERROR.FILE_VALIDATION_FAILED:
+                                progress.setStatus("Failed Validation.  Upload skipped.");
+                                swfu.debug("Error Code: File Validation Failed, File name: " + file.name + ", File size: " + file.size + ", Message: " + message);
+                                break;
+                        case SWFUpload.UPLOAD_ERROR.FILE_CANCELLED:
+                                // If there aren't any files left (they were all cancelled) disable the cancel button
+                                if (this.getStats().files_queued === 0) {
+                                        document.getElementById(swfu.customSettings.cancelButtonId).disabled = true;
+                                }
+                                progress.setStatus("Cancelled");
+                                progress.setCancelled();
+                                break;
+
+                        case SWFUpload.UPLOAD_ERROR.UPLOAD_STOPPED:
+                                progress.setStatus("Stopped");
+                                break;
+                        default:
+                                progress.setStatus("Unhandled Error: " + errorCode);
+                                swfu.debug("Error Code: " + errorCode + ", File name: " + file.name + ", File size: " + file.size + ", Message: " + message);
+                                break;
+                        }
+                } catch (ex) {
+                        swfu.debug(ex);
+                }
+        })
+
+        .bind('fileQueued', function(event, file){
+                try {
+                        var txtFileName = document.getElementById("txtFileName");
+                        txtFileName.value = file.name;
+                } catch (e) {
+                }
+        })
+        .bind('fileQueueError', function(event, file, errorCode, message){
+                alert('Size of the file '+file.name+' is greater than limit');
+        })
+        .bind('fileDialogComplete', function(event, numFilesSelected, numFilesQueued){
+                var swfu = $.swfupload.getInstance('#swfupload-control');
+                var btnSubmit=$('#btnSubmit');
+                btnSubmit.click(function(){
+                        try {
+                                swfu.startUpload();
+                        } catch (ex) {
+
+                        }
+                        return false;
+                });
+                validateForm();
+        })
+
+        .bind('uploadStart', function(event, file){
+                var swfu = $.swfupload.getInstance('#swfupload-control');
+                try {
+                        //var progress = new FileProgress(file, swfu.customSettings.progressTarget);
+                        //progress.setStatus("Uploading...");
+                        //progress.toggleCancel(true, this);
+                        trackFiles[trackFilesCount++] = file.name;
+                        updateDisplay.call(swfu,file);
+                }
+                catch (ex) {}
+                return true;
+        })
+
+        .bind('uploadProgress', function(event, file, bytesLoaded, bytesTotal){
+                var swfu = $.swfupload.getInstance('#swfupload-control');
+                try {
+                        var percent = Math.ceil((bytesLoaded / bytesTotal) * 100);
+                        file.id = "singlefile";
+                        var progress = new FileProgress(file, swfu.customSettings.progressTarget);
+                        var animPic = document.getElementById("loadanim");
+                        if (animPic != null) {
+                          animPic.style.display = 'block';
+                        }
+                        progress.setStatus("Uploading..."+(isMacUser && file.size < MacMinSizeUpload ? ' ...Finishing up, 10 second delay' : ''));
+                        progress.setProgress(percent);
+                        $('#fsUploadProgress2').text(percent+'%');
+                        updateDisplay.call(swfu, file);
+                } catch (ex) {
+                        swfu.debug(ex);
+                }
+        })
+        .bind('uploadSuccess', function(event, file, serverData){
+                var swfu = $.swfupload.getInstance('#swfupload-control');
+                try {
+                        file.id = "singlefile";
+                        var progress = new FileProgress(file, swfu.customSettings.progressTarget);
+                        progress.setComplete();
+                        progress.setStatus("Complete.");
+                        progress.toggleCancel(false);
+
+                        if (serverData === " ") {
+                                swfu.customSettings.upload_successful = false;
+                        } else {
+                                swfu.customSettings.upload_successful = true;
+                                document.getElementById("hidFileID").value = serverData;
+                                document.getElementById("keyFilename").value = "LV" + randNum + "_" + file.name;
+                        }
+                } catch (ex) {
+                        swfu.debug(ex);
+                }
+        })
+
+        .bind('uploadComplete', function(event, file){
+                // upload has completed, try the next one in the queue
+                //$(this).swfupload('startUpload');
+                var swfu = $.swfupload.getInstance('#swfupload-control');
+                try {
+                        console.log(swfu.customSettings.upload_successful);
+                        if (swfu.customSettings.upload_successful) {
+                                swfu.setButtonDisabled(true);
+                                //CALL BACK uploadDone(); OR
+                                //FORM SUBMIT document.forms[0].submit();
+                                //alert('DONE!!');
+                                document.forms[0].submit();
+                        } else {
+                                file.id = "singlefile"; // This makes it so FileProgress only makes a single UI element, instead of one for each file
+                                var progress = new FileProgress(file, swfu.customSettings.progress_target);
+                                progress.setError();
+                                progress.setStatus("File rejected");
+                                progress.toggleCancel(false);
+
+                                var txtFileName = document.getElementById("txtFileName");
+                                txtFileName.value = "";
+                                validateForm();
+                                alert("There was a problem with the upload.\nThe server did not accept it.");
+                        }
+                } catch (e) {
+                }
+        })
+
+/// END
+});
+
+function updateDisplay(swfu,file) {
+  // isMacUser Patch Begin
+  if ( isMacUser ) {
+        if (file == null && forceDone) {
+      master.cancelUpload(forceFile.id,false);
+      pauseProcess(500); // allow flash? to update itself
+      master.uploadSuccess(forceFile,null);
+      master.uploadComplete(forceFile);
+      forceDone = false;
+      return;
+    }
+    // check for small files less < 150k
+    // note: dialup users will get bad results.
+    if (file.size < MacMinSizeUpload && !forceDone) {
+      master = swfu;
+      if (!forceDone) {
+        forceFile = file;
+        // wait <n> seconds before enforcing upload done!
+        setTimeout("updateDisplay("+null+","+null+")",MacDelay);
+        forceDone = true;
+      }
+    }
+  } // isMacUser Patch End
+}
+
+// this should *not* be needed, just testing an idea
+function pauseProcess(millis) {
+  var sDate = new Date();
+  var cDate = null;
+
+  do {
+    cDate = new Date();
+  } while(cDate-sDate < millis);
+}
+function validateForm() {
+        //validate here
+}
+</script>
+<?php } ?>
+<script>
+$(document).ready(function(){
+   $(".changeClass").click(function(evento){
+      var className = $(this).data('class');
+      $("body").attr('oncontextmenu','return true;');
+      evento.preventDefault();
+      $("#divClasses").load("sec/getClasses.php", {class: className}, function(){});
+   });
+})
+</script>
+
+<?php if(!isset($_SESSION["admin"])) {?>
+<script>$(document).ready(function(){document.oncontextmenu = function() {return false;};$(document).mousedown(function(e){if( e.button == 2 ) {document.oncontextmenu = function() {return false;};return false;}return true;});});</script>
+<?php } ?>
+
+<?php if(strpos($_SERVER['HTTP_USER_AGENT'],"MSIE") || strpos($_SERVER['HTTP_USER_AGENT'],"Android") || strpos($_SERVER['HTTP_USER_AGENT'],"iPhone")) {
+
+include('../inc/db.php');
+
+$q = "SELECT S3KeyFinished,S3BucketFinished FROM videos WHERE format='". $_GET["format"] . "' AND classDate='" . $_GET["classdate"] . "' AND class='" . $_GET["class"] ."' AND part='" . $_GET["part"] . "'";
+$res = mysql_query($q);
+$row = mysql_fetch_array($res);
+?>
+<script>
+$(document).ready(function(){
+ $("#jquery_jplayer_1").jPlayer({
+  ready: function () {
+   $(this).jPlayer("setMedia", {
+    <?php if($_GET["format"] == "mp3") {?>mp3: <?php } else { ?>m4v: <?php } ?>"https://<?=$row["S3BucketFinished"];?>.s3.amazonaws.com/<?=$row["S3KeyFinished"];?>",
+    poster: "https://luna.sat.iit.edu/img/poster.png"
+   });
+  },
+  swfPath: "../js",
+<?php if($_GET["format"] == "ipad") {?>
+  size: {
+        width: "640px",
+        height: "360px",
+        cssClass: "jp-video-360p"
+  },
+<?php } elseif($_GET["format"] == "iphone") {?>
+  size: {
+        width: "480px",
+        height: "270px",
+        cssClass: "jp-video-270p"
+  },
+<?php } elseif($_GET["format"] == "mp4") {?>
+  fullScreen: "true",
+<?php } ?>
+  <?php if($_GET["format"] == "mp3") {?>supplied: "mp3"<? } else { ?>supplied: "m4v"<? } ?>
+ });
+ $.jPlayer.timeFormat.showHour = true;
+ 
+});
+</script>
+<?php } ?>
+
+<?php if($_GET["go"] == "play"){?>
+<script>
+$(document).ready(function(){
+   $("body").attr('oncontextmenu','return false;');
+});
+</script>
+<?php } ?>
+
+<?php if(isset($_SESSION["admin"]) && $_GET["go"] == "cla") {?>
+<script>
+function upName() {
+   $(".changeName").live('click',function(event) {
+     event.preventDefault();
+     var idVal = $(this).data('id');
+     var className = $('#upNameInput').val();
+
+     $.post("sec/manClasses.php", {action: "update", id: idVal, class: className}, function(evento) {
+       $(".class" + idVal).replaceWith('<a class="class' + idVal + '">' + className + '</a>');
+       editClass();
+      });
+
+   });
+}
+
+
+function editClass() {
+   $(".editClass").live('click',function(event) {
+     event.preventDefault();
+     var idVal = $(this).data('id');
+     var className = $(this).data('name');
+
+     $(".class" + idVal).replaceWith('<div class="form-inline class' + idVal + '"><input type="text" class="input-small" value="'+className+'" id="upNameInput"><button type="submit" class="btn btn-primary btn-mini changeName" style="margin-left: 20px;" data-id="' + idVal + '">Update Name &raquo</buttton></div>');
+     upName();
+   });
+}
+
+$(document).ready(function(){
+   $(".newClass").click(function(event){
+      event.preventDefault();
+      var className = $('#classnameInput').val();
+      $.post("sec/manClasses.php", {class: className, action: "new"}, function(evento){
+	location.reload();
+      });
+   });
+
+   $(".delClass").click(function(event) {
+     event.preventDefault();
+     var idVal = $(this).data('id');
+     if (confirm('Are you sure to delete this class? The class will disappear from student page (enrolled ones). Videos will remain.')) {
+            $.post("sec/manClasses.php", {action: "del", id: idVal}, function(evento) {
+	       location.reload();
+            });
+      }
+   });
+
+   editClass();
+
+});
+</script>
+<? } ?>
+
+<?php if(isset($_SESSION["admin"]) && $_GET["go"] == "stu") {?>
+<script>
+
+function updateStu() {
+   $("#updateBtn").live('click', function(event) {
+     event.preventDefault();
+     var userId = $("#userid").val();
+     var statusVal = $("#status").val();
+     var idVal = $(this).data("id");
+     $.post("sec/manStudents.php", {action: "update", userId: userId, status: statusVal, idVal: idVal}, function() {
+       window.location.replace("?go=stu");
+     });
+   });
+}
+
+$(document).ready(function(){
+   $(".newStudent").click(function(event){
+      event.preventDefault();
+      var studentId = $('#classnameInput').val();
+      $.post("sec/manStudents.php", {studentId: studentId, action: "new"}, function(evento){
+        location.reload();
+      });
+   });
+
+   $(".delStudent").click(function(event) {
+     event.preventDefault();
+     var idVal = $(this).data('id');
+     if (confirm('Are you sure?')) {
+            $.post("sec/manStudents.php", {action: "del", id: idVal}, function(evento) {
+               location.reload();
+            });
+      }
+   });
+
+   $(".addClassToStudent").click(function(event) {
+     event.preventDefault();
+     var idStu = $("#selStudent").val();
+     var idCla = $("#selClass").val();
+            $.post("sec/manStudents.php", {action: "addClassToStudent", idStu: idStu, idCla: idCla}, function(evento) {
+               location.reload();
+            });
+   });
+
+   $(".delClassFromStudent").click(function(event) {
+     event.preventDefault();
+     var $this = $(this);
+     var idStu = $this.data('stu');
+     var idCla = $this.data('cla');
+     if (confirm('Are you sure?')) {
+       $.post("sec/manStudents.php", {action: "delClassFromStudent", idStu: idStu, idCla: idCla}, function(evento) {
+         $this.fadeOut("slow");
+       });
+    }
+   });
+
+   $(".editStudent").click(function(evento){
+      var idVal = $(this).data('id');
+      evento.preventDefault();
+      $("#addClassToStuForm").css("visibility", "hidden");
+      $("#addStuForm").css("visibility", "hidden");
+      $("#divStudents").load("sec/editStudent.php", {id: idVal});
+      updateStu();
+   });
+
+   $("#goBack").live('click',function(evento) {
+    evento.preventDefault();
+    window.location.replace("?go=stu");
+   });
+});
+</script>
+<?php } ?>
+
+<?php if(isset($_SESSION["admin"]) && $_GET["go"] == "vid") {?>
+<script>
+function updateVid() {
+   $("#updateBtn").live('click', function(event) {
+     event.preventDefault();
+     var classVal = $("#selClass").val();
+     var classDateVal = $("#classdate").val();
+     var idVal = $(this).data("id");
+     var format = $('#format').val();
+     var part = $('#part').val();
+     var bucket = $('#bucket').val();
+     var filename = $('#filename').val();
+     $.post("sec/manVideos.php", {action: "update", class: classVal, classdate: classDateVal, id: idVal,format: format,part: part,bucket: bucket, filename: filename}, function() {
+       $("#divVideos").load("sec/getVideos.php", {class: classVal});
+     });
+   });
+}
+
+
+$(document).ready(function(){
+   $(".convVideo").live('click',function(evento){
+      var className = $(this).data('class');
+      var classDate = $(this).data('classdate');
+      var S3KeyFinished = $(this).data('original');
+      var part = $(this).data('part');
+      var format = $("#selFormat").val();
+      evento.preventDefault();
+     $.post("sec/convAdmin.php", {class: className, classDate: classDate, format: format,part: part, S3KeyFinished: S3KeyFinished}, function(e) {
+       alert(e);
+     });
+   });
+
+   $(".filterClass").click(function(evento){
+      var className = $('#selClass').val();
+      evento.preventDefault();
+      $("#divVideos").load("sec/getVideos.php", {class: className}, function(){});
+   });
+
+   $(".filterBucket").click(function(evento){
+      var bucketName = $('#selBucket').val();
+      evento.preventDefault();
+      $("#divVideos").load("sec/getS3Videos.php", {bucket: bucketName});
+   });
+
+   $(".editVideo").live('click',function(evento){
+      var idVal = $(this).data('id');
+      var className = $(this).data('class');
+      evento.preventDefault();
+      $("#divVideos").load("sec/editVideo.php", {id: idVal, class: className});
+      updateVid();
+   });
+
+   $("#goBack").live('click',function(evento) {
+    evento.preventDefault();
+    var classVal = $(this).data('class');
+    $("#divVideos").load("sec/getVideos.php", {class: classVal});
+   });
+
+   $(".delVideo").live('click', function(event) {
+     event.preventDefault();
+     var idVal = $(this).data('id');
+     var classVal = $(this).data('class');
+     if (confirm('Record in database will be deleted. Video file will remain in S3. Are you sure?')) {
+            $.post("sec/manVideos.php", {action: "del", id: idVal}, function(evento) {
+               $("#divVideos").load("sec/getVideos.php", {class: classVal});
+            });
+      }
+   });
+
+   $(".delS3Video").live('click', function(event) {
+     event.preventDefault();
+     var keyVal = $(this).data('key');
+     var bucketVal = $(this).data('bucket');
+     if (confirm('Video file will be removed from S3. This action cannot be undone. Are you sure?')) {
+            $.post("sec/manVideos.php", {action: "delS3", key: keyVal, bucket: bucketVal}, function(evento) {
+               $("#divVideos").load("sec/getS3Videos.php", {bucket: bucketVal});
+            });
+      }
+   });
+});
+</script>
+<?php } ?>
+
+<?php if(isset($_SESSION["admin"]) && $_GET["go"] == "sys") {?>
+<script>
+$(document).ready(function(){
+   $(".killInstance").click(function(event) {
+     event.preventDefault();
+     var instId = $(this).data('id');
+     if (confirm('If you kill the instance video conversion will stop. Request will need to be deleted manually. Do you want to continue?')) {
+            $.post("sec/manSystem.php", {action: "killInstance", instId: instId}, function(evento) {
+               window.location.replace("?go=sys");
+            });
+      }
+   });
+});
+</script>
+<?php } ?>
+
+<?php if(isset($_SESSION["admin"]) && $_GET["go"] == "req") {?>
+<script>
+$(document).ready(function(){
+   $(".delRequest").click(function(event) {
+     event.preventDefault();
+     var idVal = $(this).data('id');
+     if (confirm('If you delete the request video conversion may not be done. Do you want to continue?')) {
+            $.post("sec/manRequests.php", {action: "del", id: idVal}, function(evento) {
+               window.location.replace("?go=req");
+            });
+      }
+   });
+});
+</script>
+<?php } ?>
+
+<?php if($_GET["go"] == "fee") {?>
+<script>
+$(document).ready(function(){
+   $("#btnSubmit").click(function(event) {
+     event.preventDefault();
+     var user = $('#useremail').val();
+     var os = $('#os').val();
+     var ua = $('#ua').val();
+     var com = $('#comment').val();
+     $.post("sec/sendMail.php", {user: user, os: os, ua: ua, com: com}, function(evento) {
+          $('#btnSubmit').attr("disabled", true);
+	  alert('Thanks for your time!');
+          console.log(evento);
+     });
+   });
+});
+</script>
+<?php } ?>
+
